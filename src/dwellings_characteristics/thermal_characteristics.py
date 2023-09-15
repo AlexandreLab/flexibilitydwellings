@@ -96,25 +96,31 @@ def add_columns_tidy_df(org_dataf: pd.DataFrame,
         dataf["Average annual heat demand kWh"] * dataf["Number of dwellings"])
     lookup_dict = dwelling_form_lookup_table(dataf)
     dataf["Dwelling forms"] = dataf["Dwelling category"].map(lookup_dict)
+    print('Dwelling form')
     lookup_dict = heating_system_lookup_table(dataf)
     dataf["Heating systems"] = dataf["Dwelling category"].map(lookup_dict)
+    print('Heating system')
     lookup_dict = get_lookup_table(org_dataf, "Design_temperature_degreeC")
     dataf["Outdoor air design temperature degreeC"] = dataf["LSOA_index"].map(
         lookup_dict)
+    print('Outdoor air design temperature degreeC')
     lookup_dict = get_lookup_table(org_dataf, "Region")
     dataf["Region"] = dataf["LSOA_index"].map(lookup_dict)
-
+    print('Region')
     lookup_dict = get_lookup_table(org_dataf, "Local Authority")
     dataf["Local Authority"] = dataf["LSOA_index"].map(lookup_dict)
+    print('Local authority')
     lookup_dict = get_lookup_table(org_dataf, "LSOA11CD")
     dataf["LSOA_code"] = dataf["LSOA_index"].map(lookup_dict)
-
+    print('LSOA_code')
     dataf["Average size of heating system kW"] = dataf[
         "Average thermal losses kW/K"] * (
             21 - dataf["Outdoor air design temperature degreeC"])
+    print("Average size of heating system kW")
     dataf["Total capacity installed of heating systems GW"] = (
         dataf["Average size of heating system kW"] *
         dataf["Number of dwellings"] / 1_000_000)
+    print("Total capacity installed of heating systems GW")
     return dataf
 
 
@@ -272,7 +278,7 @@ def get_degreedays_by_region(ukerc_path_data: str) -> Tuple[dict, dict]:
 class ThermalCharacteristics:
     path_data: str = ""
     filename: str = ""
-    scenario: str = "before energy efficiency"
+    scenario: str = "before"
     if filename == "":
         filename = "LSOAs_in_England_Wales_before_EE_heat_demand.csv"
 
@@ -303,8 +309,8 @@ class ThermalCharacteristics:
         dataf = self.lsoa_data
         for c in self.categories:
             heat_demand_col = (
-                f"Average heat demand {self.scenario} measures for {c} (kWh)")
-            floor_col = f"Average floor area of {c}"
+                f"Average heat demand {self.scenario} energy efficiency measures for {c} (kWh)")
+            floor_col = f"Average floor area of {c} (m2)"
 
             max_heat_value = dataf[heat_demand_col].quantile(0.99)
             min_heat_value = dataf[heat_demand_col].quantile(0.01)
@@ -335,7 +341,9 @@ class ThermalCharacteristics:
 
     def load_data(self) -> ThermalCharacteristics:
         self.lsoa_data = pd.read_csv(self.path_data + os.path.sep +
-                                     self.filename)
+                                     self.filename,
+                                     low_memory=False,
+                                     index_col=0)
         return self
 
     def map_LA_to_region(self) -> ThermalCharacteristics:
@@ -349,15 +357,16 @@ class ThermalCharacteristics:
         # add design temeprature and degree days data
         design_temp, dd_dict = get_degreedays_by_region(ukerc_path_data)
         self.lsoa_data["Degree_days"] = self.lsoa_data["Region"].map(dd_dict)
-        self.lsoa_data["Design_temperature_degreeC"] = self.lsoa_data[
-            "Region"].map(design_temp)
+        self.lsoa_data["Design_temperature_degreeC"] = pd.to_numeric(self.lsoa_data[
+            "Region"].map(design_temp))
+        
         return self
 
     def calculate_thermal_losses(self) -> ThermalCharacteristics:
 
         for c in self.categories:
             heat_demand_col = (
-                f"Average heat demand {self.scenario} measures for {c} (kWh)")
+                f"Average heat demand {self.scenario} energy efficiency measures for {c} (kWh)")
             temp_col_name = f"Average thermal losses {c} kW/K"
             self.lsoa_data[temp_col_name] = self.lsoa_data[heat_demand_col] / (
                 24 * self.lsoa_data["Degree_days"])
@@ -366,7 +375,7 @@ class ThermalCharacteristics:
     def calculate_thermal_capacity(self) -> ThermalCharacteristics:
         dataf = self.lsoa_data
         for c in self.categories:
-            floor_col = f"Average floor area of {c}"
+            floor_col = f"Average floor area of {c} (m2)"
             dataf[floor_col].fillna(dataf[floor_col].mean(), inplace=True)
             print(f"0.9 Quantile of {c} is {dataf[floor_col].quantile(0.99)}")
             print(f"Max value of {c} is {dataf[floor_col].max()}")
